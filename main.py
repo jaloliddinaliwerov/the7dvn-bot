@@ -19,7 +19,7 @@ STARS_CHAT_LINK = "https://t.me/m/f-d_Aqc1OGQ6"
 
 CHANNELS_TEXT = (
     "📢 Hamkor kanallarim:\n\n"
-    "🔹 https://t.me/the7dvn/n"
+    "🔹 https://t.me/the7dvn\n"
     "🔹 Hamkorlikda ishlash uchun adminga murojaat qiling\n"
 )
 
