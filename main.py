@@ -11,7 +11,7 @@ from aiogram.types import (
 )
 
 # ===== SOZLAMALAR =====
-TOKEN = os.getenv("8258746697:AAFOA2SI09YV_SMuIeq9lSmFN67k1fbeItk")  # Render env
+TOKEN = os.getenv("BOT_TOKEN")  # Render env
 ADMIN_ID = 6734269605  # <-- O'ZINGIZNI TELEGRAM ID QOYING
 
 PREMIUM_CHAT_LINK = "https://t.me/m/zCrdNfrZMjJi"
