@@ -13,7 +13,7 @@ from aiogram.filters import CommandStart
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 ADMIN_ID = 6734269605          # admin ID
-ADMIN_USERNAME = "https://t.me/the_797"
+ADMIN_USERNAME = "the_797"
 CHANNEL_USERNAME = "@the7dvn"
 
 ANTI_SPAM_SECONDS = 5         # 5 soniya
