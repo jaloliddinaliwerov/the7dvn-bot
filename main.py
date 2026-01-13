@@ -1,150 +1,213 @@
 import asyncio
 import os
+import time
+import sqlite3
+
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command
-from aiogram.types import (
-    Message, CallbackQuery,
-    InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.enums import ChatMemberStatus, ParseMode
+from aiogram.filters import CommandStart
+
+# ================= CONFIG =================
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+ADMIN_ID = 6734269605          # admin ID
+ADMIN_USERNAME = "https://t.me/the_797"
+CHANNEL_USERNAME = "@the7dvn"
+
+ANTI_SPAM_SECONDS = 5         # 5 soniya
+
+# ================= SQLITE =================
+
+db = sqlite3.connect("bot.db")
+cursor = db.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT,
+    lang TEXT,
+    last_msg REAL
 )
-from aiogram.enums import ChatMemberStatus
+""")
+db.commit()
 
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 6734269605  # <-- O'Z ID
-CHANNEL_ID = -1002057432941  # <-- MAJBURIY KANAL ID
+# ================= MENULAR =================
 
-# ===== LINKLAR =====
-BOT_USERNAME = "https://t.me/by797_bot"
-PREMIUM_BUY_LINK = "https://t.me/the_797"
-STARS_BUY_LINK = "https://t.me/the_797"
-
-# ===== NARXLAR =====
-PREMIUM_TEXT = "⭐ Telegram Premium\n\n1 oy — 42 990 so‘m\n3 oy — 169 990 so‘m\n12 oy — 309 990 so‘m"
-STARS_TEXT = "🌟 Telegram Stars\n\n100⭐ — 28 000 so‘m\n500⭐ — 124 990 so‘m\n1000⭐ — 249 990 so‘m"
-
-# ===== SAQLASH =====
-users = set()
-referrals = {}        # user_id: count
-discount_users = set()
-
-# ===== KANAL TEKSHIRUV =====
-async def check_subscription(bot, user_id):
-    member = await bot.get_chat_member(CHANNEL_ID, user_id)
-    return member.status in (
-        ChatMemberStatus.MEMBER,
-        ChatMemberStatus.ADMINISTRATOR,
-        ChatMemberStatus.CREATOR,
+def lang_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🇺🇿 O‘zbekcha")],
+            [KeyboardButton(text="🇷🇺 Русский")],
+            [KeyboardButton(text="🇬🇧 English")]
+        ],
+        resize_keyboard=True
     )
 
-# ===== MENU =====
-menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="🛒 Xizmatlar")],
-        [KeyboardButton(text="👥 Referal tizimi"), KeyboardButton(text="🎁 Chegirmam")],
-        [KeyboardButton(text="📢 Kanallarim"), KeyboardButton(text="✉️ Adminga yozish")],
-    ],
-    resize_keyboard=True
-)
+def main_menu(lang):
+    texts = {
+        "uz": ["⭐ Telegram Premium", "✨ Telegram Stars", "📢 Kanallarimiz", "✉️ Adminga xabar"],
+        "ru": ["⭐ Telegram Premium", "✨ Telegram Stars", "📢 Наши каналы", "✉️ Написать админу"],
+        "en": ["⭐ Telegram Premium", "✨ Telegram Stars", "📢 Our channels", "✉️ Message admin"],
+    }
+    t = texts[lang]
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=t[0]), KeyboardButton(text=t[1])],
+                  [KeyboardButton(text=t[2]), KeyboardButton(text=t[3])]],
+        resize_keyboard=True
+    )
 
-services_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="⭐ Telegram Premium", callback_data="premium")],
-    [InlineKeyboardButton(text="🌟 Telegram Stars", callback_data="stars")],
-])
+def admin_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📢 Reklama yuborish")],
+            [KeyboardButton(text="👥 Foydalanuvchilar soni")]
+        ],
+        resize_keyboard=True
+    )
 
-def buy_kb(link, discount=False):
-    text = "🛒 Sotib olish"
-    if discount:
-        text += " (-10%)"
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=text, url=link)]
-    ])
+# ================= UTILS =================
+
+def get_user(user_id):
+    cursor.execute("SELECT lang, last_msg FROM users WHERE user_id=?", (user_id,))
+    return cursor.fetchone()
+
+def save_user(user_id, username, lang):
+    cursor.execute(
+        "INSERT OR REPLACE INTO users (user_id, username, lang, last_msg) VALUES (?,?,?,?)",
+        (user_id, username, lang, 0)
+    )
+    db.commit()
+
+async def check_subscription(bot, user_id):
+    try:
+        member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        return member.status in (
+            ChatMemberStatus.MEMBER,
+            ChatMemberStatus.ADMINISTRATOR,
+            ChatMemberStatus.CREATOR
+        )
+    except:
+        return False
+
+def anti_spam(user_id):
+    row = get_user(user_id)
+    now = time.time()
+    if row and row[1] and now - row[1] < ANTI_SPAM_SECONDS:
+        return False
+    cursor.execute("UPDATE users SET last_msg=? WHERE user_id=?", (now, user_id))
+    db.commit()
+    return True
+
+# ================= BOT =================
 
 async def main():
-    bot = Bot(TOKEN)
+    bot = Bot(BOT_TOKEN, parse_mode=ParseMode.HTML)
     dp = Dispatcher()
 
-    # ===== START + REFERAL =====
+    # START
     @dp.message(CommandStart())
     async def start(message: Message):
-        args = message.text.split()
-        user_id = message.from_user.id
-        users.add(user_id)
+        save_user(message.from_user.id, message.from_user.username, "uz")
+        await message.answer(
+            "Tilni tanlang / Choose language / Выберите язык",
+            reply_markup=lang_menu()
+        )
 
-        # Referal hisoblash
-        if len(args) > 1:
-            ref_id = int(args[1])
-            if ref_id != user_id:
-                referrals[ref_id] = referrals.get(ref_id, 0) + 1
-                if referrals[ref_id] >= 10:
-                    discount_users.add(ref_id)
+    # LANGUAGE
+    @dp.message(F.text.in_(["🇺🇿 O‘zbekcha", "🇷🇺 Русский", "🇬🇧 English"]))
+    async def set_lang(message: Message):
+        lang = "uz" if "O‘zbek" in message.text else "ru" if "Рус" in message.text else "en"
+        save_user(message.from_user.id, message.from_user.username, lang)
 
-        # Kanal tekshirish
-        if not await check_subscription(bot, user_id):
+        if not await check_subscription(bot, message.from_user.id):
             await message.answer(
-                "❗ Botdan foydalanish uchun kanalga a’zo bo‘ling:",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📢 Kanalga a’zo bo‘lish", url="https://t.me/the7dvn")],
-                    [InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_sub")]
-                ])
+                f"❗ Avval kanalga obuna bo‘ling:\nhttps://t.me/{CHANNEL_USERNAME.replace('@','')}"
             )
             return
 
+        await message.answer("✅ OK", reply_markup=main_menu(lang))
+
+    # PREMIUM
+    @dp.message(F.text.contains("Premium"))
+    async def premium(message: Message):
+        if not anti_spam(message.from_user.id):
+            return
         await message.answer(
-            "👋 Xush kelibsiz!\nPastdagi menyudan foydalaning 👇",
-            reply_markup=menu
+            f"⭐ <b>Telegram Premium</b>\n\nSotib olish 👉 @{ADMIN_USERNAME}"
         )
 
-    @dp.callback_query(F.data == "check_sub")
-    async def check_sub(call: CallbackQuery):
-        if await check_subscription(bot, call.from_user.id):
-            await call.message.answer("✅ Rahmat! Endi foydalanishingiz mumkin.", reply_markup=menu)
-        else:
-            await call.answer("❌ Hali kanalga a’zo emassiz", show_alert=True)
-
-    # ===== XIZMATLAR =====
-    @dp.message(F.text == "🛒 Xizmatlar")
-    async def services(message: Message):
-        await message.answer("Xizmatni tanlang:", reply_markup=services_kb)
-
-    @dp.callback_query(F.data == "premium")
-    async def premium(call: CallbackQuery):
-        discount = call.from_user.id in discount_users
-        text = PREMIUM_TEXT
-        if discount:
-            text += "\n\n🎁 Sizda 10% chegirma mavjud!"
-        await call.message.answer(text, reply_markup=buy_kb(PREMIUM_BUY_LINK, discount))
-        await call.answer()
-
-    @dp.callback_query(F.data == "stars")
-    async def stars(call: CallbackQuery):
-        discount = call.from_user.id in discount_users
-        text = STARS_TEXT
-        if discount:
-            text += "\n\n🎁 Sizda 10% chegirma mavjud!"
-        await call.message.answer(text, reply_markup=buy_kb(STARS_BUY_LINK, discount))
-        await call.answer()
-
-    # ===== REFERAL =====
-    @dp.message(F.text == "👥 Referal tizimi")
-    async def ref_info(message: Message):
-        uid = message.from_user.id
-        count = referrals.get(uid, 0)
-        link = f"https://t.me/{BOT_USERNAME}?start={uid}"
-
+    # STARS
+    @dp.message(F.text.contains("Stars"))
+    async def stars(message: Message):
+        if not anti_spam(message.from_user.id):
+            return
         await message.answer(
-            f"👥 Referal tizimi\n\n"
-            f"Taklif qilganlar: {count}/10\n"
-            f"10 ta bo‘lsa → 🎁 10% chegirma\n\n"
-            f"🔗 Sizning referal linkingiz:\n{link}"
+            "✨ <b>Telegram Stars</b>\n\n100 ⭐ = 28990 so'm \n500 ⭐ = 124990 so'm \n1000 ⭐ = 249990 so'm\n\n"
+            f"Sotib olish 👉 @{ADMIN_USERNAME}"
         )
 
-    # ===== CHEGIRMA =====
-    @dp.message(F.text == "🎁 Chegirmam")
-    async def discount(message: Message):
-        if message.from_user.id in discount_users:
-            await message.answer("🎉 Sizda 10% chegirma AKTIV!")
-        else:
-            await message.answer("❌ Hozircha chegirma yo‘q.\n10 ta do‘st taklif qiling.")
+    # CHANNELS
+    @dp.message(F.text.contains("Kanallar") | F.text.contains("канал") | F.text.contains("channels"))
+    async def channels(message: Message):
+        await message.answer(
+            "📢 https://t.me/the7dvn\n📢 https://t.me/+8wSiiKO_kYY1NGY6"
+        )
+
+    # USER -> ADMIN MESSAGE
+    @dp.message(F.text.contains("xabar") | F.text.contains("Message") | F.text.contains("Написать"))
+    async def ask_message(message: Message):
+        await message.answer("✉️ Xabaringizni yozing:")
+
+    @dp.message()
+    async def forward(message: Message):
+        if message.from_user.id == ADMIN_ID:
+            return
+        if not anti_spam(message.from_user.id):
+            return
+
+        user = message.from_user
+        await bot.send_message(
+            ADMIN_ID,
+            f"📩 <b>Yangi xabar</b>\n"
+            f"👤 @{user.username}\n"
+            f"🆔 <code>{user.id}</code>\n\n"
+            f"{message.text}"
+        )
+        await message.answer("✅ Yuborildi")
+
+    # ================= ADMIN =================
+
+    @dp.message(CommandStart(), F.from_user.id == ADMIN_ID)
+    async def admin_start(message: Message):
+        await message.answer("👑 Admin panel", reply_markup=admin_menu())
+
+    @dp.message(F.text == "👥 Foydalanuvchilar soni", F.from_user.id == ADMIN_ID)
+    async def count(message: Message):
+        cursor.execute("SELECT COUNT(*) FROM users")
+        await message.answer(f"👥 Jami foydalanuvchilar: {cursor.fetchone()[0]}")
+
+    @dp.message(F.text == "📢 Reklama yuborish", F.from_user.id == ADMIN_ID)
+    async def broadcast_start(message: Message):
+        await message.answer("📢 Yubormoqchi bo‘lgan xabarni yozing:")
+        dp["broadcast"] = True
+
+    @dp.message(F.from_user.id == ADMIN_ID)
+    async def broadcast(message: Message):
+        if not dp.get("broadcast"):
+            return
+        dp["broadcast"] = False
+
+        cursor.execute("SELECT user_id FROM users")
+        sent = 0
+        for (uid,) in cursor.fetchall():
+            try:
+                await bot.send_message(uid, message.text)
+                sent += 1
+            except:
+                pass
+        await message.answer(f"✅ Yuborildi: {sent}")
 
     await dp.start_polling(bot)
 
