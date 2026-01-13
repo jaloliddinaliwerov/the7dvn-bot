@@ -4,19 +4,15 @@ import time
 import sqlite3
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums import ChatMemberStatus, ParseMode
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart
 
 # ================= CONFIG =================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-bot = Bot(BOT_TOKEN)
-dp = Dispatcher()
-
-ADMIN_ID = 6734269605          # admin ID
+ADMIN_ID = int(os.getenv("ADMIN_ID"))        # admin ID
 ADMIN_USERNAME = "the_797"
 CHANNEL_USERNAME = "@the7dvn"
 
@@ -183,100 +179,39 @@ async def main():
 
     # ================= ADMIN =================
 
-    def admin_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📊 Statistika", callback_data="admin_stats")],
-            [InlineKeyboardButton(text="📢 Reklama yuborish", callback_data="admin_broadcast")],
-            [InlineKeyboardButton(text="📩 Anonim xabarlar", callback_data="admin_messages")],
-            [InlineKeyboardButton(text="⬅️ Chiqish", callback_data="admin_exit")]
-        ]
-    )
+ 
+    @dp.message(CommandStart(), F.from_user.id == ADMIN_ID)
+    async def admin_start(message: Message):
+        await message.answer("👑 Admin panel", reply_markup=admin_menu())
 
-    @dp.message(Command("admin"))
-async def admin_panel(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("❌ Siz admin emassiz")
-        return
+    @dp.message(F.text == "👥 Foydalanuvchilar soni", F.from_user.id == ADMIN_ID)
+    async def count(message: Message):
+        cursor.execute("SELECT COUNT(*) FROM users")
+        await message.answer(f"👥 Jami foydalanuvchilar: {cursor.fetchone()[0]}")
 
-    await message.answer(
-        "🛠 <b>ADMIN PANEL</b>",
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
+    @dp.message(F.text == "📢 Reklama yuborish", F.from_user.id == ADMIN_ID)
+    async def broadcast_start(message: Message):
+        await message.answer("📢 Yubormoqchi bo‘lgan xabarni yozing:")
+        dp["broadcast"] = True
 
-    @dp.callback_query(F.data == "admin_stats")
-async def admin_stats(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        return
+    @dp.message(F.from_user.id == ADMIN_ID)
+    async def broadcast(message: Message):
+        if not dp.get("broadcast"):
+            return
+        dp["broadcast"] = False
 
-    # misol uchun
-    total_users = 123  
-
-    await call.message.edit_text(
-        f"📊 <b>Statistika</b>\n\n"
-        f"👥 Jami foydalanuvchilar: <b>{total_users}</b>",
-        reply_markup=admin_keyboard(),
-        parse_mode="HTML"
-    )
-
-    admin_broadcast_mode = False
-
-@dp.callback_query(F.data == "admin_broadcast")
-async def admin_broadcast(call: CallbackQuery):
-    global admin_broadcast_mode
-    if call.from_user.id != ADMIN_ID:
-        return
-
-    admin_broadcast_mode = True
-    await call.message.answer(
-        "📢 Yubormoqchi bo‘lgan xabarni jo‘nating"
-    )
-@dp.message()
-async def handle_admin_broadcast(message: Message):
-    global admin_broadcast_mode
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    if not admin_broadcast_mode:
-        return
-
-    admin_broadcast_mode = False
-
-    # BU YERDA userlar DB dan olinadi
-    user_ids = []  # sqlite’dan olasan
-
-    sent = 0
-    for user_id in user_ids:
-        try:
-            await bot.send_message(user_id, message.text)
-            sent += 1
-        except:
-            pass
-
-    await message.answer(f"✅ {sent} ta foydalanuvchiga yuborildi")
-
-    @dp.callback_query(F.data == "admin_exit")
-async def admin_exit(call: CallbackQuery):
-    if call.from_user.id != ADMIN_ID:
-        return
-
-    await call.message.edit_text("⬅️ Admin panel yopildi")
-
-    @dp.message(CommandStart())
-async def start(message: Message):
-    if message.from_user.id == ADMIN_ID:
-        await message.answer(
-            "👋 Xush kelibsiz, Admin!",
-            reply_markup=admin_keyboard()
-        )
-    else:
-        await message.answer(
-            "👋 Xush kelibsiz!"
-        )
-
+        cursor.execute("SELECT user_id FROM users")
+        sent = 0
+        for (uid,) in cursor.fetchall():
+            try:
+                await bot.send_message(uid, message.text)
+                sent += 1
+            except:
+                pass
+        await message.answer(f"✅ Yuborildi: {sent}")
 
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
+
