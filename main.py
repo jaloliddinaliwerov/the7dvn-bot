@@ -33,7 +33,7 @@ async def check_subscription(bot, user_id):
     return member.status in (
         ChatMemberStatus.MEMBER,
         ChatMemberStatus.ADMINISTRATOR,
-        ChatMemberStatus.OWNER,
+        ChatMemberStatus.CREATOR,
     )
 
 # ===== MENU =====
