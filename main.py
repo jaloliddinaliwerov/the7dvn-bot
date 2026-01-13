@@ -1,99 +1,152 @@
 import asyncio
 import os
-
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import (
-    Message,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery,
+    Message, CallbackQuery,
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton
 )
+from aiogram.enums import ChatMemberStatus
 
-# ===== SOZLAMALAR =====
-TOKEN = os.getenv("BOT_TOKEN")  # Render env
-ADMIN_ID = 6734269605  # <-- O'ZINGIZNI TELEGRAM ID QOYING
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = 6734269605  # <-- O'Z ID
+CHANNEL_ID = -1002057432941  # <-- MAJBURIY KANAL ID
 
-PREMIUM_CHAT_LINK = "https://t.me/m/zCrdNfrZMjJi"
-STARS_CHAT_LINK = "https://t.me/m/f-d_Aqc1OGQ6"
+# ===== LINKLAR =====
+BOT_USERNAME = "https://t.me/by797_bot"
+PREMIUM_BUY_LINK = "https://t.me/the_797"
+STARS_BUY_LINK = "https://t.me/the_797"
 
-CHANNELS_TEXT = (
-    "📢 Hamkor kanallarim:\n\n"
-    "🔹 https://t.me/the7dvn\n"
-    "🔹 Hamkorlikda ishlash uchun adminga murojaat qiling\n"
-)
+# ===== NARXLAR =====
+PREMIUM_TEXT = "⭐ Telegram Premium\n\n1 oy — 42 990 so‘m\n3 oy — 169 990 so‘m\n12 oy — 309 990 so‘m"
+STARS_TEXT = "🌟 Telegram Stars\n\n100⭐ — 28 000 so‘m\n500⭐ — 124 990 so‘m\n1000⭐ — 249 990 so‘m"
 
-# ===== TUGMALAR =====
-def main_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="⭐ Telegram Premium", url=PREMIUM_CHAT_LINK),
-            ],
-            [
-                InlineKeyboardButton(text="🌟 Telegram Stars", url=STARS_CHAT_LINK),
-            ],
-            [
-                InlineKeyboardButton(text="📢 Kanallarim", callback_data="channels"),
-            ],
-            [
-                InlineKeyboardButton(text="✉️ Adminga yozish", callback_data="admin"),
-            ],
-        ]
+# ===== SAQLASH =====
+users = set()
+referrals = {}        # user_id: count
+discount_users = set()
+
+# ===== KANAL TEKSHIRUV =====
+async def check_subscription(bot, user_id):
+    member = await bot.get_chat_member(CHANNEL_ID, user_id)
+    return member.status in (
+        ChatMemberStatus.MEMBER,
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.OWNER,
     )
 
+# ===== MENU =====
+menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🛒 Xizmatlar")],
+        [KeyboardButton(text="👥 Referal tizimi"), KeyboardButton(text="🎁 Chegirmam")],
+        [KeyboardButton(text="📢 Kanallarim"), KeyboardButton(text="✉️ Adminga yozish")],
+    ],
+    resize_keyboard=True
+)
+
+services_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="⭐ Telegram Premium", callback_data="premium")],
+    [InlineKeyboardButton(text="🌟 Telegram Stars", callback_data="stars")],
+])
+
+def buy_kb(link, discount=False):
+    text = "🛒 Sotib olish"
+    if discount:
+        text += " (-10%)"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=text, url=link)]
+    ])
 
 async def main():
-    if not TOKEN:
-        raise RuntimeError("BOT_TOKEN topilmadi")
-
-    bot = Bot(token=TOKEN)
+    bot = Bot(TOKEN)
     dp = Dispatcher()
 
-    # ===== /start =====
+    # ===== START + REFERAL =====
     @dp.message(CommandStart())
-    async def start_handler(message: Message):
-        await message.answer(
-            "👋 Salom!\n\n"
-            "Bu bot orqali mening xizmatlarim bilan tanishishingiz mumkin.\n"
-            "Quyidagi tugmalardan foydalaning ⬇️",
-            reply_markup=main_keyboard(),
-        )
+    async def start(message: Message):
+        args = message.text.split()
+        user_id = message.from_user.id
+        users.add(user_id)
 
-    # ===== KANALLAR =====
-    @dp.callback_query(F.data == "channels")
-    async def channels_handler(call: CallbackQuery):
-        await call.message.answer(CHANNELS_TEXT)
-        await call.answer()
+        # Referal hisoblash
+        if len(args) > 1:
+            ref_id = int(args[1])
+            if ref_id != user_id:
+                referrals[ref_id] = referrals.get(ref_id, 0) + 1
+                if referrals[ref_id] >= 10:
+                    discount_users.add(ref_id)
 
-    # ===== ADMIN YOZISH BOSHLASH =====
-    @dp.callback_query(F.data == "admin")
-    async def admin_start(call: CallbackQuery):
-        await call.message.answer(
-            "✍️ Adminga yubormoqchi bo‘lgan xabaringizni yozing.\n\n"
-            "Bekor qilish uchun /start bosing."
-        )
-        await call.answer()
-
-    # ===== ADMIN GA XABAR YUBORISH =====
-    @dp.message(F.text)
-    async def forward_to_admin(message: Message):
-        if message.from_user.id == ADMIN_ID:
+        # Kanal tekshirish
+        if not await check_subscription(bot, user_id):
+            await message.answer(
+                "❗ Botdan foydalanish uchun kanalga a’zo bo‘ling:",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📢 Kanalga a’zo bo‘lish", url="https://t.me/the7dvn")],
+                    [InlineKeyboardButton(text="✅ Tekshirish", callback_data="check_sub")]
+                ])
+            )
             return
 
-        text = (
-            "📩 Yangi xabar:\n\n"
-            f"👤 Foydalanuvchi: @{message.from_user.username}\n"
-            f"🆔 ID: {message.from_user.id}\n\n"
-            f"💬 Xabar:\n{message.text}"
+        await message.answer(
+            "👋 Xush kelibsiz!\nPastdagi menyudan foydalaning 👇",
+            reply_markup=menu
         )
 
-        await bot.send_message(ADMIN_ID, text)
-        await message.answer("✅ Xabaringiz adminga yuborildi.")
+    @dp.callback_query(F.data == "check_sub")
+    async def check_sub(call: CallbackQuery):
+        if await check_subscription(bot, call.from_user.id):
+            await call.message.answer("✅ Rahmat! Endi foydalanishingiz mumkin.", reply_markup=menu)
+        else:
+            await call.answer("❌ Hali kanalga a’zo emassiz", show_alert=True)
 
-    # ===== BOTNI ISHGA TUSHIRISH =====
+    # ===== XIZMATLAR =====
+    @dp.message(F.text == "🛒 Xizmatlar")
+    async def services(message: Message):
+        await message.answer("Xizmatni tanlang:", reply_markup=services_kb)
+
+    @dp.callback_query(F.data == "premium")
+    async def premium(call: CallbackQuery):
+        discount = call.from_user.id in discount_users
+        text = PREMIUM_TEXT
+        if discount:
+            text += "\n\n🎁 Sizda 10% chegirma mavjud!"
+        await call.message.answer(text, reply_markup=buy_kb(PREMIUM_BUY_LINK, discount))
+        await call.answer()
+
+    @dp.callback_query(F.data == "stars")
+    async def stars(call: CallbackQuery):
+        discount = call.from_user.id in discount_users
+        text = STARS_TEXT
+        if discount:
+            text += "\n\n🎁 Sizda 10% chegirma mavjud!"
+        await call.message.answer(text, reply_markup=buy_kb(STARS_BUY_LINK, discount))
+        await call.answer()
+
+    # ===== REFERAL =====
+    @dp.message(F.text == "👥 Referal tizimi")
+    async def ref_info(message: Message):
+        uid = message.from_user.id
+        count = referrals.get(uid, 0)
+        link = f"https://t.me/{BOT_USERNAME}?start={uid}"
+
+        await message.answer(
+            f"👥 Referal tizimi\n\n"
+            f"Taklif qilganlar: {count}/10\n"
+            f"10 ta bo‘lsa → 🎁 10% chegirma\n\n"
+            f"🔗 Sizning referal linkingiz:\n{link}"
+        )
+
+    # ===== CHEGIRMA =====
+    @dp.message(F.text == "🎁 Chegirmam")
+    async def discount(message: Message):
+        if message.from_user.id in discount_users:
+            await message.answer("🎉 Sizda 10% chegirma AKTIV!")
+        else:
+            await message.answer("❌ Hozircha chegirma yo‘q.\n10 ta do‘st taklif qiling.")
+
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
